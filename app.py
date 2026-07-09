@@ -80,9 +80,11 @@ mask &= numeric_slider(df, "GC content (%)", "GC content (%)", step=1.0)
 mask &= numeric_slider(df, "Final Tm (°C)", "Final Tm (°C)", step=0.5)
 
 st.sidebar.markdown("---")
-query = st.sidebar.text_input("Sequence contains (substring / motif)", "").strip().upper()
+query = st.sidebar.text_input("Sequence search (substring / motif, or exact if ticked)", "").strip().upper()
+exact = st.sidebar.checkbox("Exact match", value=False)
 if query and "Sequence (5'→3')" in df.columns:
-    mask &= df["Sequence (5'→3')"].str.upper().str.contains(query, na=False)
+    seqs = df["Sequence (5'→3')"].str.upper()
+    mask &= (seqs == query) if exact else seqs.str.contains(query, na=False)
 
 fdf = df[mask]
 
