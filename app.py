@@ -16,7 +16,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-st.set_page_config(page_title="G4All Explorer", page_icon="🧬", layout="wide")
+st.set_page_config(page_title="G4All", page_icon="🧬", layout="wide")
 
 DATA_PATH = "G4All.csv"  # may actually be xlsx despite the extension; handled below
 
