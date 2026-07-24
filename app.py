@@ -28,6 +28,40 @@ PREFERRED_ORDER = [
     "Topology (100 mM KCl)", "Name", "Reference", "Study type", "Origin",
 ]
 
+# ------------------------------------------------------------------ colour scheme
+# Blue = G4, orange = No G4, purple = Unstable, neutral grey = Not sure.
+COLOR_MAP = {
+    # Conclusion
+    "G4": "#1f77b4", "Stable G4": "#1f77b4",
+    "No G4": "#ff7f0e",
+    "Unstable G4": "#9467bd", "Unstable": "#9467bd",
+    "Not sure": "#AEB7C2", "Unsure": "#AEB7C2",
+    # Quadparser state
+    "positive": "#1f77b4", "negative": "#ff7f0e",
+    # Type
+    "DNA": "#1f77b4", "RNA": "#9467bd",
+}
+# Fallback for any category not in the map (new labels, new columns).
+PALETTE = ["#1f77b4", "#ff7f0e", "#9467bd", "#AEB7C2",
+           "#2ca02c", "#d62728", "#8c564b", "#17becf"]
+
+CAT_ORDER = {
+    "Conclusion": ["G4", "Unstable G4", "No G4", "Not sure"],
+    "Quadparser state": ["positive", "negative"],
+    "Type": ["DNA", "RNA"],
+}
+
+
+def cat_order_for(col, frame):
+    """category_orders for plotly: known order first, then any unlisted values."""
+    if not col or col not in frame.columns:
+        return {}
+    known = CAT_ORDER.get(col, [])
+    present = frame[col].dropna().astype(str).unique().tolist()
+    ordered = [v for v in known if v in present] + [v for v in present if v not in known]
+    return {col: ordered}
+
+
 # ---------------------------------------------------------------------------- loading
 
 def _norm(s) -> str:
@@ -296,7 +330,10 @@ with tab_dist:
             color_by = st.selectbox("Colour by", cat_for_color + [None], index=0)
         if len(fdf):
             fig = px.histogram(fdf, x=xcol, color=color_by, marginal="box",
-                               nbins=50, barmode="overlay", opacity=0.75)
+                               nbins=50, barmode="overlay", opacity=0.75,
+                               color_discrete_map=COLOR_MAP,
+                               color_discrete_sequence=PALETTE,
+                               category_orders=cat_order_for(color_by, fdf))
             fig.update_layout(height=520, legend_title_text=color_by or "")
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -319,7 +356,10 @@ with tab_scatter:
             hover = [c for c in (resolve(df, "Name"), SEQ_COL, resolve(df, "Reference"))
                      if c]
             fig = px.scatter(plot_df, x=xax, y=yax, color=cby,
-                             hover_data=hover, opacity=0.6)
+                             hover_data=hover, opacity=0.6,
+                             color_discrete_map=COLOR_MAP,
+                             color_discrete_sequence=PALETTE,
+                             category_orders=cat_order_for(cby, plot_df))
             fig.update_layout(height=560)
             st.plotly_chart(fig, use_container_width=True)
             st.caption(f"{len(plot_df):,} points (rows missing X or Y are dropped).")
