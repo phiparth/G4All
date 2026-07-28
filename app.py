@@ -9,22 +9,47 @@ encoding/mojibake, so new rows OR new/renamed columns in G4All.csv keep working
 without editing this file.
 """
 
+import base64
+import inspect
 import io
+import os
 import re
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-st.set_page_config(page_title="G4All", page_icon="🧬", layout="wide")
+ICON_SVG = os.path.join("assets", "g4_icon.svg")
+FAVICON = os.path.join("assets", "g4_favicon.png")
+
+st.set_page_config(
+    page_title="G4All",
+    page_icon=FAVICON if os.path.exists(FAVICON) else "🔷",
+    layout="wide",
+)
+
+# Streamlit renamed use_container_width to width="stretch"; support both.
+FIT = ({"width": "stretch"}
+       if "width" in inspect.signature(st.dataframe).parameters
+       else {"use_container_width": True})
+FIT_PLOT = ({"width": "stretch"}
+            if "width" in inspect.signature(st.plotly_chart).parameters
+            else {"use_container_width": True})
 
 DATA_PATH = "G4All.csv"  # may actually be xlsx despite the extension; handled below
+
+# Displayed decimals. Experimental Tm is not meaningful past 0.01 °C, and neither
+# is a G4Hunter score, so the raw values are rounded for display and export.
+TM_DECIMALS = 2
+SCORE_DECIMALS = 2
+GC_DECIMALS = 1
 
 # Preferred display order. Missing ones are skipped; anything not listed is
 # appended, so new columns still show when "Show all columns" is on.
 PREFERRED_ORDER = [
-    "Type", "Sequence", "G4Hunter score", "G4Hmax", "Conclusion", "Final Tm",
-    "Length (nt)", "Quadparser state", "GC content (%)", "Total G count",
+    "Type", "Sequence", "Length (nt)", "G4Hunter score", "G4Hmax", "Conclusion",
+    "Final Tm", "Number of independent Tm determinations", "Number of Tm determinations",
+    "Quadparser state", "GC content (%)", "Total G count",
     "Topology (100 mM KCl)", "Name", "Reference", "Study type", "Origin",
 ]
 
@@ -201,7 +226,7 @@ def numeric_slider(df: pd.DataFrame, col, label=None, step=None):
 try:
     df = load_data(DATA_PATH)
 except FileNotFoundError:
-    st.title("🧬 G4All")
+    st.title("G4All")
     up = st.file_uploader("G4All.csv not found next to app.py, upload it", type=["csv", "xlsx"])
     if not up:
         st.stop()
@@ -222,7 +247,22 @@ COL = {
     "quadparser": resolve(df, "Quadparser state", contains="quadparser"),
 }
 
-st.title("🧬 G4All")
+def header():
+    """Title row with the quadruplex mark; falls back to plain text if absent."""
+    if os.path.exists(ICON_SVG):
+        with open(ICON_SVG, "rb") as fh:
+            b64 = base64.b64encode(fh.read()).decode("ascii")
+        st.markdown(
+            '<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.2rem">'
+            f'<img src="data:image/svg+xml;base64,{b64}" width="58" height="58" alt="G4">'
+            '<h1 style="margin:0;font-size:2.6rem;letter-spacing:-0.01em">G4All</h1></div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.title("G4All")
+
+
+header()
 st.caption(
     "Interactive explorer for the curated G-quadruplex sequence database. "
     "Search and filter on the left; everything below reacts live."
@@ -335,6 +375,31 @@ for key in PREFERRED_ORDER:
 ordered += [c for c in df.columns if c not in ordered]
 core_cols = [c for c in ordered if c not in TM_COLS]
 
+# --------------------------------------------------------------- display precision / QC
+ROUNDING = {}
+for _c in TM_COLS + [COL["final_tm"]]:
+    if _c:
+        ROUNDING[_c] = TM_DECIMALS
+for _c in (COL["g4hunter"], COL["g4hmax"], resolve(df, "r (K+)"), resolve(df, "r (Na+)")):
+    if _c:
+        ROUNDING[_c] = SCORE_DECIMALS
+if COL["gc"]:
+    ROUNDING[COL["gc"]] = GC_DECIMALS
+
+
+def column_config(frame):
+    """Number formats so nothing is shown to more digits than it is known to."""
+    cfg = {}
+    for c, d in ROUNDING.items():
+        if c in frame.columns and pd.api.types.is_numeric_dtype(frame[c]):
+            cfg[c] = st.column_config.NumberColumn(c, format=f"%.{d}f")
+    return cfg
+
+
+def round_for_export(frame):
+    return frame.round({c: d for c, d in ROUNDING.items() if c in frame.columns})
+
+
 # -------------------------------------------------------------------------------- table
 with tab_table:
     show_all = st.checkbox(
@@ -342,10 +407,15 @@ with tab_table:
         value=False,
     )
     cols = ordered if show_all else core_cols
-    st.dataframe(fdf[cols], use_container_width=True, height=560)
+    st.dataframe(fdf[cols], height=560, column_config=column_config(fdf), **FIT)
 
     # utf-8-sig so the ° / arrow render correctly if opened in Excel.
-    csv_bytes = fdf.to_csv(index=False).encode("utf-8-sig")
+    raw = st.checkbox(
+        "Export raw unrounded values", value=False,
+        help="By default the download carries the same rounding as the table above.",
+    )
+    export = fdf if raw else round_for_export(fdf)
+    csv_bytes = export.to_csv(index=False).encode("utf-8-sig")
     st.download_button(
         "⬇️ Download filtered subset (CSV)",
         data=csv_bytes,
@@ -373,7 +443,7 @@ with tab_dist:
                                color_discrete_sequence=PALETTE,
                                category_orders=cat_order_for(color_by, fdf))
             fig.update_layout(height=520, legend_title_text=color_by or "")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, **FIT_PLOT)
         else:
             st.info("No rows match the current filters.")
 
@@ -399,7 +469,7 @@ with tab_scatter:
                              color_discrete_sequence=PALETTE,
                              category_orders=cat_order_for(cby, plot_df))
             fig.update_layout(height=560)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, **FIT_PLOT)
             st.caption(f"{len(plot_df):,} points (rows missing X or Y are dropped).")
         else:
             st.info("Not enough non-missing data for this pair.")
