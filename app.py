@@ -12,21 +12,82 @@ without editing this file.
 import base64
 import inspect
 import io
-import os
 import re
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-ICON_SVG = os.path.join("assets", "g4_icon.svg")
-FAVICON = os.path.join("assets", "g4_favicon.png")
+# ------------------------------------------------------------------------ branding
+# The mark is a G-quadruplex: three stacked G-tetrads seen edge-on, the phosphate
+# backbone running down the flanks with propeller loops, and two K+ ions in the
+# central channel. Kept inline so app.py deploys as a single file.
+ICON_SVG = """\
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="G-quadruplex icon">
+  <title>G-quadruplex</title>
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1f77b4" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#9467bd" stop-opacity="0.85"/>
+    </linearGradient>
+  </defs>
 
-st.set_page_config(
-    page_title="G4All",
-    page_icon=FAVICON if os.path.exists(FAVICON) else "🔷",
-    layout="wide",
-)
+  <!-- phosphate backbone: two strands down the flanks, propeller loops top and bottom -->
+  <g fill="none" stroke="#5b6b7c" stroke-width="4" stroke-linecap="round" opacity="0.9">
+    <path d="M16 24 L16 72"/>
+    <path d="M80 24 L80 72"/>
+    <path d="M16 24 C 22 10, 44 6, 56 14"/>
+    <path d="M80 72 C 74 86, 52 90, 40 82"/>
+  </g>
+
+  <!-- three stacked G-tetrads seen edge-on -->
+  <g fill="url(#plate)" stroke="#0f4c7a" stroke-width="1.5" stroke-linejoin="round">
+    <polygon points="48,14 82,26 48,38 14,26"/>
+    <polygon points="48,38 82,50 48,62 14,50"/>
+    <polygon points="48,62 82,74 48,86 14,74"/>
+  </g>
+
+  <!-- guanine partition inside each tetrad -->
+  <g stroke="#ffffff" stroke-width="1.2" opacity="0.55">
+    <path d="M14 26 L82 26 M48 14 L48 38"/>
+    <path d="M14 50 L82 50 M48 38 L48 62"/>
+    <path d="M14 74 L82 74 M48 62 L48 86"/>
+  </g>
+
+  <!-- coordinating K+ ions in the central channel -->
+  <g fill="#ff7f0e" stroke="#ffffff" stroke-width="1">
+    <circle cx="48" cy="38" r="4.5"/>
+    <circle cx="48" cy="62" r="4.5"/>
+  </g>
+</svg>
+"""
+
+
+def favicon():
+    """Small raster of the same mark for the browser tab (Pillow ships with Streamlit)."""
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError:
+        return "\U0001f537"
+    size, k = 128, 128 / 96
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    bone = (91, 107, 124, 235)
+    d.line([(16 * k, 24 * k), (16 * k, 72 * k)], fill=bone, width=int(4 * k))
+    d.line([(80 * k, 24 * k), (80 * k, 72 * k)], fill=bone, width=int(4 * k))
+    for top, colour in ((14, (31, 119, 180, 230)),
+                        (38, (90, 110, 190, 230)),
+                        (62, (148, 103, 189, 230))):
+        d.polygon([(48 * k, top * k), (82 * k, (top + 12) * k),
+                   (48 * k, (top + 24) * k), (14 * k, (top + 12) * k)],
+                  fill=colour, outline=(15, 76, 122, 255))
+    for cy in (38, 62):
+        r = 4.5 * k
+        d.ellipse([48 * k - r, cy * k - r, 48 * k + r, cy * k + r], fill=(255, 127, 14, 255))
+    return img
+
+
+st.set_page_config(page_title="G4All", page_icon=favicon(), layout="wide")
 
 # Streamlit renamed use_container_width to width="stretch"; support both.
 FIT = ({"width": "stretch"}
@@ -248,18 +309,14 @@ COL = {
 }
 
 def header():
-    """Title row with the quadruplex mark; falls back to plain text if absent."""
-    if os.path.exists(ICON_SVG):
-        with open(ICON_SVG, "rb") as fh:
-            b64 = base64.b64encode(fh.read()).decode("ascii")
-        st.markdown(
-            '<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.2rem">'
-            f'<img src="data:image/svg+xml;base64,{b64}" width="58" height="58" alt="G4">'
-            '<h1 style="margin:0;font-size:2.6rem;letter-spacing:-0.01em">G4All</h1></div>',
-            unsafe_allow_html=True,
-        )
-    else:
-        st.title("G4All")
+    """Title row with the quadruplex mark."""
+    b64 = base64.b64encode(ICON_SVG.encode("utf-8")).decode("ascii")
+    st.markdown(
+        '<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.2rem">'
+        f'<img src="data:image/svg+xml;base64,{b64}" width="58" height="58" alt="G4">'
+        '<h1 style="margin:0;font-size:2.6rem;letter-spacing:-0.01em">G4All</h1></div>',
+        unsafe_allow_html=True,
+    )
 
 
 header()
