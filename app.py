@@ -1,5 +1,5 @@
 """
-G4All — interactive explorer for the curated G-quadruplex sequence database.
+G4All: interactive explorer for the curated G-quadruplex sequence database.
 
 Run locally:      streamlit run app.py
 Deploy:           push to GitHub, point Streamlit Community Cloud at this repo.
@@ -202,7 +202,7 @@ try:
     df = load_data(DATA_PATH)
 except FileNotFoundError:
     st.title("🧬 G4All")
-    up = st.file_uploader("G4All.csv not found next to app.py — upload it", type=["csv", "xlsx"])
+    up = st.file_uploader("G4All.csv not found next to app.py, upload it", type=["csv", "xlsx"])
     if not up:
         st.stop()
     df = _read_and_clean(up)
@@ -247,7 +247,7 @@ if SEQ_COL:
             try:
                 mask &= seqs.str.contains(query, na=False, regex=use_regex)
             except re.error:
-                st.sidebar.warning("Invalid regex — ignored.")
+                st.sidebar.warning("Invalid regex, ignored.")
 else:
     st.sidebar.caption("No sequence column found in this file.")
 
@@ -300,7 +300,7 @@ if COL["conclusion"]:
         delta_color="off",
         help=(
             "Share of the sequences currently in view whose experimental verdict is "
-            '"G4" — i.e. a G4 that folds **and** is stable under the assay conditions. '
+            '"G4", i.e. a G4 that folds **and** is stable under the assay conditions. '
             'Sequences labelled "Unstable G4" (G4 observed but low thermal stability) '
             "are excluded from this figure and counted in the second line; "
             '"No G4" and "Not sure" are excluded from both.'
@@ -319,7 +319,7 @@ if COL["conclusion"]:
     st.caption(
         f'**Stable G4** counts rows with Conclusion = "G4" ({n_stable:,} of {len(fdf):,} '
         f"in view, {stable_pct:.1f}%). Adding the {n_unstable:,} rows labelled "
-        f'"Unstable G4" — G4 formation observed but not thermally stable — gives '
+        f'"Unstable G4" (G4 formation observed but not thermally stable) gives '
         f"{any_pct:.1f}%. The remainder are \"No G4\" or \"Not sure\". "
         "Use the Conclusion filter on the left to restrict any view to a single verdict."
     )
