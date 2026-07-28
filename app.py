@@ -28,6 +28,10 @@ PREFERRED_ORDER = [
     "Topology (100 mM KCl)", "Name", "Reference", "Study type", "Origin",
 ]
 
+# Conclusion labels that count as "forms a G4" at each level of strictness.
+STABLE_G4_LABELS = {"g4", "stable g4"}
+UNSTABLE_G4_LABELS = {"unstable g4", "unstable"}
+
 # ------------------------------------------------------------------ colour scheme
 # Blue = G4, orange = No G4, purple = Unstable, neutral grey = Not sure.
 COLOR_MAP = {
@@ -221,12 +225,36 @@ COL = {
 st.title("🧬 G4All")
 st.caption(
     "Interactive explorer for the curated G-quadruplex sequence database. "
-    "Filter on the left; everything below reacts live."
+    "Search and filter on the left; everything below reacts live."
 )
+
+mask = pd.Series(True, index=df.index)
+
+# ------------------------------------------------------------------------ search (top)
+st.sidebar.header("Search")
+if SEQ_COL:
+    query = st.sidebar.text_input(
+        "Sequence (substring / motif; regex if ticked)", "",
+        placeholder="e.g. GGGTTAGGG",
+    ).strip().upper()
+    use_regex = st.sidebar.checkbox("Treat as regex (e.g. G{3,})", value=False)
+    exact = st.sidebar.checkbox("Exact match", value=False)
+    if query:
+        seqs = df[SEQ_COL].astype(str).str.upper()
+        if exact:
+            mask &= seqs == query
+        else:
+            try:
+                mask &= seqs.str.contains(query, na=False, regex=use_regex)
+            except re.error:
+                st.sidebar.warning("Invalid regex — ignored.")
+else:
+    st.sidebar.caption("No sequence column found in this file.")
+
+st.sidebar.markdown("---")
 
 # -------------------------------------------------------------------------------- filters
 st.sidebar.header("Filters")
-mask = pd.Series(True, index=df.index)
 
 # Categorical filters: a curated priority order, then any other low-card column,
 # so brand-new categorical columns get filters automatically.
@@ -252,32 +280,33 @@ with st.sidebar.expander("More numeric filters"):
 for col in picked:
     mask &= numeric_slider(df, col)
 
-st.sidebar.markdown("---")
-if SEQ_COL:
-    query = st.sidebar.text_input(
-        "Sequence search (substring / motif; regex if ticked)", ""
-    ).strip().upper()
-    use_regex = st.sidebar.checkbox("Treat as regex (e.g. G{3,})", value=False)
-    exact = st.sidebar.checkbox("Exact match", value=False)
-    if query:
-        seqs = df[SEQ_COL].astype(str).str.upper()
-        if exact:
-            mask &= seqs == query
-        else:
-            try:
-                mask &= seqs.str.contains(query, na=False, regex=use_regex)
-            except re.error:
-                st.sidebar.warning("Invalid regex — ignored.")
-
 fdf = df[mask]
 
 # -------------------------------------------------------------------------------- metrics
 c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Sequences", f"{len(fdf):,}",
           delta=f"{len(fdf) - len(df):,}" if len(fdf) != len(df) else None)
+
 if COL["conclusion"]:
-    g4_frac = (fdf[COL["conclusion"]] == "G4").mean() * 100 if len(fdf) else 0
-    c2.metric("Confirmed G4", f"{g4_frac:.0f}%")
+    concl = fdf[COL["conclusion"]].astype(str).str.strip().str.lower()
+    n_stable = concl.isin(STABLE_G4_LABELS).sum()
+    n_unstable = concl.isin(UNSTABLE_G4_LABELS).sum()
+    stable_pct = 100 * n_stable / len(fdf) if len(fdf) else 0
+    any_pct = 100 * (n_stable + n_unstable) / len(fdf) if len(fdf) else 0
+    c2.metric(
+        "Stable G4",
+        f"{stable_pct:.0f}%",
+        delta=f"{any_pct:.0f}% incl. unstable",
+        delta_color="off",
+        help=(
+            "Share of the sequences currently in view whose experimental verdict is "
+            '"G4" — i.e. a G4 that folds **and** is stable under the assay conditions. '
+            'Sequences labelled "Unstable G4" (G4 observed but low thermal stability) '
+            "are excluded from this figure and counted in the second line; "
+            '"No G4" and "Not sure" are excluded from both.'
+        ),
+    )
+
 if COL["type"]:
     dna = (fdf[COL["type"]] == "DNA").sum()
     c3.metric("DNA / RNA", f"{dna:,} / {len(fdf) - dna:,}")
@@ -285,6 +314,15 @@ if COL["g4hunter"] and fdf[COL["g4hunter"]].notna().any():
     c4.metric("Median G4Hunter", f"{fdf[COL['g4hunter']].median():.2f}")
 if COL["final_tm"] and fdf[COL["final_tm"]].notna().any():
     c5.metric("Median Tm", f"{fdf[COL['final_tm']].median():.1f} °C")
+
+if COL["conclusion"]:
+    st.caption(
+        f'**Stable G4** counts rows with Conclusion = "G4" ({n_stable:,} of {len(fdf):,} '
+        f"in view, {stable_pct:.1f}%). Adding the {n_unstable:,} rows labelled "
+        f'"Unstable G4" — G4 formation observed but not thermally stable — gives '
+        f"{any_pct:.1f}%. The remainder are \"No G4\" or \"Not sure\". "
+        "Use the Conclusion filter on the left to restrict any view to a single verdict."
+    )
 
 tab_table, tab_dist, tab_scatter = st.tabs(["📋 Table", "📊 Distributions", "🔬 Relationships"])
 
