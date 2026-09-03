@@ -282,6 +282,97 @@ def numeric_slider(df: pd.DataFrame, col, label=None, step=None):
     return in_range | (df[col].isna() & keep_na)
 
 
+# Sequence-length filter. The slider, the typed bounds and the preset buttons
+# are three views of one range, kept together in session_state.
+LEN_RANGE, LEN_MIN, LEN_MAX = "len_range", "len_min", "len_max"
+
+
+def _set_len_range(lo, hi):
+    st.session_state[LEN_RANGE] = (int(lo), int(hi))
+    st.session_state[LEN_MIN], st.session_state[LEN_MAX] = int(lo), int(hi)
+
+
+def _len_from_slider():
+    _set_len_range(*st.session_state[LEN_RANGE])
+
+
+def _len_from_numbers():
+    # Typed bounds can cross over; sorting keeps the range well-formed.
+    lo, hi = sorted((int(st.session_state[LEN_MIN]), int(st.session_state[LEN_MAX])))
+    _set_len_range(lo, hi)
+
+
+def sequence_lengths(df: pd.DataFrame, len_col, seq_col):
+    """Length in nt per row: the Length column where given, else the sequence itself."""
+    lengths = None
+    if len_col and len_col in df.columns:
+        lengths = pd.to_numeric(df[len_col], errors="coerce")
+    if seq_col and seq_col in df.columns:
+        from_seq = (df[seq_col].astype(str)
+                    .str.replace(r"\s+", "", regex=True)
+                    .str.len()
+                    .where(df[seq_col].notna()))
+        lengths = from_seq if lengths is None else lengths.fillna(from_seq)
+    return lengths
+
+
+def length_filter(df: pd.DataFrame, lengths) -> pd.Series:
+    """Sidebar control for the sequence-length range; returns a boolean mask.
+
+    Long constructs (multi-repeat sequences, promoter fragments) dominate the
+    distributions and the score/Tm relationships, so restricting length is a
+    first-class filter rather than one slider among many: presets for the
+    common cut-offs, a slider to sweep, and typed bounds when an exact cut-off
+    matters.
+    """
+    st.sidebar.header("Sequence length")
+    if lengths is None or lengths.dropna().empty:
+        st.sidebar.caption("No length information in this file.")
+        return pd.Series(True, index=df.index)
+
+    lo, hi = int(lengths.min()), int(lengths.max())
+    if lo == hi:
+        st.sidebar.caption(f"Every sequence is {lo} nt long.")
+        return pd.Series(True, index=df.index)
+
+    # Clamp whatever is in session_state to the current data, and seed first run.
+    cur_lo, cur_hi = st.session_state.get(LEN_RANGE, (lo, hi))
+    _set_len_range(min(max(int(cur_lo), lo), hi), max(min(int(cur_hi), hi), lo))
+
+    # Data-driven cut-offs, so the shortcuts stay meaningful for any dataset.
+    presets = [("All", (lo, hi))]
+    for cut in (int(lengths.quantile(0.5)), int(lengths.quantile(0.9))):
+        if lo < cut < hi and (lo, cut) not in [rng for _, rng in presets]:
+            presets.append((f"≤ {cut} nt", (lo, cut)))
+    for col, (label, rng) in zip(st.sidebar.columns(len(presets)), presets):
+        col.button(label, key=f"len_preset_{label}", on_click=_set_len_range, args=rng,
+                   help=f"Keep sequences of {rng[0]}–{rng[1]} nt")
+
+    st.sidebar.slider("Range (nt)", lo, hi, step=1,
+                      key=LEN_RANGE, on_change=_len_from_slider)
+    cmin, cmax = st.sidebar.columns(2)
+    cmin.number_input("Min", lo, hi, step=1, key=LEN_MIN, on_change=_len_from_numbers)
+    cmax.number_input("Max", lo, hi, step=1, key=LEN_MAX, on_change=_len_from_numbers)
+
+    sel_lo, sel_hi = st.session_state[LEN_RANGE]
+    in_range = lengths.between(sel_lo, sel_hi).fillna(False).astype(bool)
+    unknown = lengths.isna()
+    keep_na = True
+    if unknown.any():
+        keep_na = st.sidebar.checkbox(
+            f"…keep {int(unknown.sum()):,} rows with unknown length",
+            value=True, key="na_length",
+        )
+    mask = in_range | (unknown & keep_na)
+
+    kept, dropped = int(mask.sum()), len(df) - int(mask.sum())
+    st.sidebar.caption(
+        f"{kept:,} of {len(df):,} sequences are {sel_lo}–{sel_hi} nt"
+        + (f" — {dropped:,} excluded." if dropped else ".")
+    )
+    return mask
+
+
 # ---------------------------------------------------------------------------- data load
 
 try:
@@ -350,6 +441,12 @@ else:
 
 st.sidebar.markdown("---")
 
+# ------------------------------------------------------------------ sequence length
+LENGTHS = sequence_lengths(df, COL["length"], SEQ_COL)
+mask &= length_filter(df, LENGTHS)
+
+st.sidebar.markdown("---")
+
 # -------------------------------------------------------------------------------- filters
 st.sidebar.header("Filters")
 
@@ -365,7 +462,6 @@ for col in priority_cat + auto_cat:
 
 st.sidebar.markdown("---")
 mask &= numeric_slider(df, COL["g4hunter"], "G4Hunter score", step=0.1)
-mask &= numeric_slider(df, COL["length"], "Length (nt)", step=1.0)
 mask &= numeric_slider(df, COL["gc"], "GC content (%)", step=1.0)
 mask &= numeric_slider(df, COL["final_tm"], "Final Tm (°C)", step=0.5)
 
