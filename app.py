@@ -282,8 +282,8 @@ def numeric_slider(df: pd.DataFrame, col, label=None, step=None):
     return in_range | (df[col].isna() & keep_na)
 
 
-# Sequence-length filter. The slider, the typed bounds and the preset buttons
-# are three views of one range, kept together in session_state.
+# Sequence-length filter. The slider and the typed bounds are two views of one
+# range, kept together in session_state.
 LEN_RANGE, LEN_MIN, LEN_MAX = "len_range", "len_min", "len_max"
 
 
@@ -321,9 +321,8 @@ def length_filter(df: pd.DataFrame, lengths) -> pd.Series:
 
     Long constructs (multi-repeat sequences, promoter fragments) dominate the
     distributions and the score/Tm relationships, so restricting length is a
-    first-class filter rather than one slider among many: presets for the
-    common cut-offs, a slider to sweep, and typed bounds when an exact cut-off
-    matters.
+    first-class filter rather than one slider among many: a slider to sweep the
+    range, and typed bounds when an exact cut-off matters.
     """
     st.sidebar.header("Sequence length")
     if lengths is None or lengths.dropna().empty:
@@ -339,14 +338,8 @@ def length_filter(df: pd.DataFrame, lengths) -> pd.Series:
     cur_lo, cur_hi = st.session_state.get(LEN_RANGE, (lo, hi))
     _set_len_range(min(max(int(cur_lo), lo), hi), max(min(int(cur_hi), hi), lo))
 
-    # Data-driven cut-offs, so the shortcuts stay meaningful for any dataset.
-    presets = [("All", (lo, hi))]
-    for cut in (int(lengths.quantile(0.5)), int(lengths.quantile(0.9))):
-        if lo < cut < hi and (lo, cut) not in [rng for _, rng in presets]:
-            presets.append((f"≤ {cut} nt", (lo, cut)))
-    for col, (label, rng) in zip(st.sidebar.columns(len(presets)), presets):
-        col.button(label, key=f"len_preset_{label}", on_click=_set_len_range, args=rng,
-                   help=f"Keep sequences of {rng[0]}–{rng[1]} nt")
+    st.sidebar.button("All", key="len_preset_all", on_click=_set_len_range, args=(lo, hi),
+                      help=f"Back to the full {lo}–{hi} nt range")
 
     st.sidebar.slider("Range (nt)", lo, hi, step=1,
                       key=LEN_RANGE, on_change=_len_from_slider)
