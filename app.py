@@ -619,3 +619,15 @@ with tab_scatter:
             st.caption(f"{len(plot_df):,} points (rows missing X or Y are dropped).")
         else:
             st.info("Not enough non-missing data for this pair.")
+
+# -------------------------------------------------------------------------------- notes
+# Roadmap notes, kept at the foot of the page so they sit under whichever tab
+# is open rather than inside one of them.
+st.markdown("---")
+st.markdown("**Notes**")
+st.caption(
+    "- Future versions will allow integration of modified bases in G4Hunter "
+    "score calculations.\n"
+    "- We are currently working on consistent naming of chemical modifications, "
+    "such as Bromo-G."
+)
