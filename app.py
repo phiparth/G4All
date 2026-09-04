@@ -111,7 +111,8 @@ PREFERRED_ORDER = [
     "Type", "Sequence", "Length (nt)", "G4Hunter score", "G4Hmax", "Conclusion",
     "Final Tm", "Number of independent Tm determinations", "Number of Tm determinations",
     "Quadparser state", "GC content (%)", "Total G count",
-    "Topology (100 mM KCl)", "Name", "Reference", "Study type", "Origin",
+    "Topology (100 mM KCl)", "Name", "Reference DOI", "Reference citation (Harvard)",
+    "Study type", "Origin",
 ]
 
 # Conclusion labels that count as "forms a G4" at each level of strictness.
@@ -533,12 +534,21 @@ if COL["gc"]:
     ROUNDING[COL["gc"]] = GC_DECIMALS
 
 
+# Reference columns hold long free text (Harvard citations run to a few thousand
+# characters), so they are given a fixed display width rather than stretching the table.
+WIDE_TEXT = ("Reference DOI", "Reference citation (Harvard)", "Note", "Source (in paper)")
+
+
 def column_config(frame):
     """Number formats so nothing is shown to more digits than it is known to."""
     cfg = {}
     for c, d in ROUNDING.items():
         if c in frame.columns and pd.api.types.is_numeric_dtype(frame[c]):
             cfg[c] = st.column_config.NumberColumn(c, format=f"%.{d}f")
+    for key in WIDE_TEXT:
+        c = resolve(frame, key)
+        if c and c in frame.columns:
+            cfg[c] = st.column_config.TextColumn(c, width="medium")
     return cfg
 
 
@@ -607,8 +617,8 @@ with tab_scatter:
             cby = st.selectbox("Colour", cat_for_color or [None], index=0, key="sc")
         plot_df = fdf.dropna(subset=[xax, yax])
         if len(plot_df):
-            hover = [c for c in (resolve(df, "Name"), SEQ_COL, resolve(df, "Reference"))
-                     if c]
+            hover = [c for c in (resolve(df, "Name"), SEQ_COL,
+                                 resolve(df, "Reference DOI", contains="doi")) if c]
             fig = px.scatter(plot_df, x=xax, y=yax, color=cby,
                              hover_data=hover, opacity=0.6,
                              color_discrete_map=COLOR_MAP,
